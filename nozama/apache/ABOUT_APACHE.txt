@@ -5,7 +5,7 @@
 
                              February 2002
 
-The Apache Project is a collaborative software development effort aimed
+The Apache  Project is a collaborative software development effort aimed
 at creating a robust, commercial-grade, featureful, and freely-available
 source code implementation of an HTTP (Web) server.  The project is
 jointly managed by a group of volunteers located around the world, using
