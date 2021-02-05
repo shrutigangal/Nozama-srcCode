@@ -1,0 +1,500 @@
+<?php
+// $Id: isbn.module,v 1.2.2.4 2009/09/17 05:30:15 gundalo Exp $
+
+/**
+ * @file
+ * Defines ISBN field types.
+ */
+
+define('ISSN_8_DIGIT', 8);
+define('ISBN_10_DIGIT', 10);
+define('ISBN_13_DIGIT', 13);
+
+define('ISBN_NO_VALIDATION' , 0);
+define('ISBN_SUBMIT_VALIDATION', 1);
+define('ISBN_JS_VALIDATION', 2);
+
+
+/**
+ * Implementation of hook_menu().
+ */
+function isbn_menu() {
+  
+  $items['isbn/validate'] = array(
+    'title' => 'ISBN Validate',
+    'page callback' => 'isbn_validate_ajax',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  ); 
+
+  return $items;
+}
+
+/**
+ * Ajax callback function for validating an ISBN
+ */
+function isbn_validate_ajax($isbn_format, $isbn_number) {
+  drupal_json(isbn_validate_number($isbn_number, $isbn_format));
+}
+
+function isbn_validate_number($number, $format){
+  module_load_include('inc', 'isbn');
+
+  $number = isbn_clean($number);
+  
+  $validate_function = "isbn_validate_$format";
+  
+  $return = $validate_function($number);
+  
+  //Set invalid message.
+  if ($return['valid'] == false && !isset($return['message'])) {
+    $return['message'] = 'confirmFailure';
+    
+    $length = strlen($number);
+    
+    if ($length < $format) {
+      $return['message'] = 'notEnoughDigits';
+    } elseif ($length > $format) {
+      $return['message'] = 'tooManyDigits';
+    }
+
+  }
+  
+  return $return;
+}
+
+function isbn_validate_10($number){
+  return array('valid' => ISN_checksum_OK($number, ISBN_10_DIGIT));
+}
+
+function isbn_validate_8($number){
+  return array('valid' => ISN_checksum_OK($number, ISSN_8_DIGIT));
+}
+
+
+function isbn_validate_13($string){
+
+  $return['valid'] = _isbn_validate_13($string);
+  
+  //Invalidate if not 978 or 979
+  $prefix = substr($string, 0, 3);
+  if ($prefix !== "978" && $prefix !== "979") {
+    $return['valid'] = false;
+    $return['message'] = 'missingPrefix13';
+  }
+  return $return;
+}
+
+/**
+ * Validator for 13 digit ISBNs
+ * from http://www.alixaxel.com/wordpress/wp-content/2007/07/ISBN.php
+ */
+function _isbn_validate_13($string){
+    settype($string, 'string');
+    
+    if (strlen($string) != 13) {
+        return false;
+    }
+
+    $stack = 0;
+    $even = false;
+
+    for ($i = 12; $i >= 0; $i--)
+    {
+        if ($even === true)
+        {
+            $stack += $string[$i] * 3;
+
+            $even = false;
+        }
+
+        else
+        {
+            $stack += $string[$i];
+
+            $even = true;
+        }
+    }
+
+    if ($stack % 10 == 0)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+
+
+/**
+ * Implementation of hook_theme().
+ */
+function isbn_theme() {
+  return array(
+    'isbn_field' => array(
+      'arguments' => array('element' => NULL),
+    ),
+    'isbn_formatter_raw' => array(
+      'arguments' => array('element' => NULL),
+    ),
+    'isbn_formatter_clean' => array(
+      'arguments' => array('element' => NULL),
+    ),
+  );
+}
+
+/**
+ * Implementation of hook_field_info().
+ */
+function isbn_field_info() {
+  return array(
+    'isbn' => array(
+      'label' => t('ISBN Number'),
+      'description' => t('Stores an ISBN number in the database.'),
+    ),
+  );
+}
+
+/**
+ * Implementation of hook_field_settings().
+ */
+function isbn_field_settings($op, $field) {
+  switch ($op) {
+    case 'form':
+      $form = array();
+      $form['isbn_format'] = array(
+        '#type' => 'radios',
+        '#title' => t('ISBN Number Format'),
+        '#default_value' => is_numeric($field['isbn_format']) ? $field['isbn_format'] : ISSN_8_DIGIT,
+        '#options' => array(
+          ISSN_8_DIGIT => t('ISSN 8 Digit'),
+          ISBN_10_DIGIT => t('ISBN 10 Digit'),
+          ISBN_13_DIGIT => t('ISBN 13 Digit'),
+        ),
+      );
+      $form['isbn_validation'] = array(
+        '#type' => 'radios',
+        '#title' => t('ISBN Validation'),
+        '#default_value' => is_numeric($field['isbn_validation']) ? $field['isbn_validation'] :  ISBN_NO_VALIDATION,
+        '#options' => array(
+          ISBN_NO_VALIDATION => t('No validation'),
+          ISBN_SUBMIT_VALIDATION => t('Validation on Submit (confirms check digit)'),
+          ISBN_JS_VALIDATION => t('Validation with Javascript (Confirms check digit.  Also validates on Submit)'),
+        ),
+      );
+     return $form;
+
+    case 'save':
+      return array('isbn_format', 'isbn_validation');
+
+    case 'database columns':
+      $columns['value'] = array('type' => 'varchar', 'length' => 20, 'not null' => FALSE, 'sortable' => TRUE, 'views' => TRUE);
+      return $columns;
+
+    case 'views data':
+      /*
+      $allowed_values = content_allowed_values($field);
+      if (count($allowed_values)) {
+        $data = content_views_field_views_data($field);
+        $db_info = content_database_info($field);
+        $table_alias = content_views_tablename($field);
+
+        // Filter: Add a 'many to one' filter.
+        $copy = $data[$table_alias][$field['field_name'] .'_value'];
+        $copy['title'] = t('@label (!name) - Allowed values', array('@label' => t($field['widget']['label']), '!name' => $field['field_name']));
+        $copy['filter']['handler'] = 'content_handler_filter_many_to_one';
+        unset($copy['field'], $copy['argument'], $copy['sort']);
+        $data[$table_alias][$field['field_name'] .'_value_many_to_one'] = $copy;
+        // Argument : swap the handler to the 'many to one' operator.
+        $data[$table_alias][$field['field_name'] .'_value']['argument']['handler'] = 'content_handler_argument_many_to_one';
+        return $data;
+      }*/
+  }
+}
+
+/**
+ * Implementation of hook_field().
+ * http://drupal.org/node/342996
+ */
+function isbn_field($op, &$node, $field, &$items, $teaser, $page) {
+  switch ($op) {
+    case 'validate':
+      if (is_array($items)) {
+        foreach ($items as $delta => $item) {
+          $error_element = isset($item['_error_element']) ? $item['_error_element'] : '';
+          if (is_array($item) && isset($item['_error_element'])) unset($item['_error_element']);
+          if (!empty($item['value'])) {
+            //VALIDATE ISBN HERE
+            if ($field['isbn_validation'] !== ISBN_NO_VALIDATION) {
+              $valid = isbn_validate_number($item['value'], $field['isbn_format']);
+              if (!$valid) {
+                form_set_error($error_element, t('ISBN/ISSN Validation Failed'));
+              } 
+            }           
+          }
+        }
+      }
+      return $items;
+
+    case 'sanitize':
+      foreach ($items as $delta => $item) {
+        $isbn_formatted = isbn_clean($item['value'], $field['isbn_format']);
+        $items[$delta]['clean'] = $isbn_formatted;
+      }
+  }
+}
+
+/**
+ * Implementation of hook_content_is_empty().
+ */
+function isbn_content_is_empty($item, $field) {
+  if (empty($item['value']) && (string)$item['value'] !== '0') {
+    return TRUE;
+  }
+  return FALSE;
+}
+
+/**
+ * Implementation of hook_field_formatter_info().
+ */
+function isbn_field_formatter_info() {
+  return array(
+    'raw' => array(
+      'label' => t('ISBN: As Entered'),
+      'field types' => array('isbn'),
+      'multiple values' => CONTENT_HANDLE_CORE,
+    ),
+    'clean' => array(
+      'label' => t('ISBN: Clean (no dashes)'),
+      'field types' => array('isbn'),
+      'multiple values' => CONTENT_HANDLE_CORE,
+    ),
+  );
+}
+
+/**
+ * Theme function for 'raw' ISBN field formatter.
+ */
+function theme_isbn_formatter_raw($element) {
+  return $element['#item']['value'];
+}
+
+/**
+ * Theme function for 'clean' ISBN field formatter
+ * Removes dashes and spaces.
+ */
+function theme_isbn_formatter_clean($element) {  
+  $string = isbn_clean($element['#item']['value']);
+  return $string;
+}
+
+/**
+ * Helper function for cleaning dashes and spaces
+ */
+function isbn_clean($string) {
+  return str_replace(array('x', 'X', ' ', '-', '.'), '', $string);
+}
+
+/**
+ * Implementation of hook_widget_info().
+ *
+ * Here we indicate that the content module will handle
+ * the default value and multiple values for these widgets.
+ *
+ * Callbacks can be omitted if default handing is used.
+ * They're included here just so this module can be used
+ * as an example for custom modules that might do things
+ * differently.
+ */
+function isbn_widget_info() {
+  return array(
+    'isbn_field' => array(
+      'label' => t('ISBN field'),
+      'field types' => array('isbn'),
+      'multiple values' => CONTENT_HANDLE_CORE,
+      'callbacks' => array(
+        'default value' => CONTENT_CALLBACK_DEFAULT,
+      ),
+    ),
+  );
+}
+
+/**
+ * Implementation of FAPI hook_elements().
+ *
+ * Any FAPI callbacks needed for individual widgets can be declared here,
+ * and the element will be passed to those callbacks for processing.
+ *
+ * Drupal will automatically theme the element using a theme with
+ * the same name as the hook_elements key.
+ *
+ * Autocomplete_path is not used by text_widget but other widgets can use it
+ * (see nodereference and userreference).
+ */
+function isbn_elements() {
+  return array(
+    'isbn_field' => array(
+      '#input' => TRUE,
+      '#columns' => array('value'), '#delta' => 0,
+      '#process' => array('isbn_field_process'),
+      '#autocomplete_path' => FALSE,
+    ),
+ );
+}
+
+/**
+ * Implementation of hook_widget_settings().
+ */
+function isbn_widget_settings($op, $widget) {
+  switch ($op) {
+    case 'form':
+      return $form;
+
+    case 'save':
+      return array();
+  }
+}
+
+/**
+ * Implementation of hook_widget().
+ *
+ * Attach a single form element to the form. It will be built out and
+ * validated in the callback(s) listed in hook_elements. We build it
+ * out in the callbacks rather than here in hook_widget so it can be
+ * plugged into any module that can provide it with valid
+ * $field information.
+ *
+ * Content module will set the weight, field name and delta values
+ * for each form element. This is a change from earlier CCK versions
+ * where the widget managed its own multiple values.
+ *
+ * If there are multiple values for this field, the content module will
+ * call this function as many times as needed.
+ *
+ * @param $form
+ *   the entire form array, $form['#node'] holds node information
+ * @param $form_state
+ *   the form_state, $form_state['values'][$field['field_name']]
+ *   holds the field's form values.
+ * @param $field
+ *   the field array
+ * @param $items
+ *   array of default values for this field
+ * @param $delta
+ *   the order of this item in the array of subelements (0, 1, 2, etc)
+ *
+ * @return
+ *   the form item for a single element for this field
+ */
+function isbn_widget(&$form, &$form_state, $field, $items, $delta = 0) {
+  
+  switch(intval($field['isbn_format'])) {
+    case ISSN_8_DIGIT:
+      $field_description = t('8 Digit ISSN Numbers only');
+      break;
+    case ISBN_10_DIGIT:
+      $field_description = t('10 Digit ISBN Numbers only');
+      break;
+    case ISBN_13_DIGIT:
+      $field_description = t('13 Digit ISBN Numbers only');
+      break;
+  }
+
+  $element = array(
+    '#type' => $field['widget']['type'],
+    '#default_value' => isset($items[$delta]) ? $items[$delta] : '',
+    '#isbn_description' => $field_description,
+  );
+  return $element;
+}
+
+/**
+ * FAPI theme for an individual text elements.
+ *
+ * The textfield or textarea is already rendered by the
+ * textfield or textarea themes and the html output
+ * lives in $element['#children']. Override this theme to
+ * make custom changes to the output.
+ *
+ * $element['#field_name'] contains the field name
+ * $element['#delta]  is the position of this element in the group
+ */
+function theme_isbn_field($element) {
+
+  return $element['#children'];
+}
+
+
+
+/**
+ * Process an individual element.
+ *
+ * Build the form element. When creating a form using FAPI #process,
+ * note that $element['#value'] is already set.
+ *
+ * The $fields array is in $form['#field_info'][$element['#field_name']].
+ */
+function isbn_field_process($element, $edit, $form_state, $form) {
+  $field = $form['#field_info'][$element['#field_name']];
+  $field_key   = $element['#columns'][0];
+  
+  //Add JS for validation  
+  if ($field['isbn_validation'] == ISBN_JS_VALIDATION) {
+    $js_validate_class = 'isbn-validate';
+    isbn_dynamic_validation();
+  } 
+
+  $element[$field_key] = array(
+    '#type' => 'textfield',
+    '#default_value' => isset($element['#value'][$field_key]) ? $element['#value'][$field_key] : NULL,
+    '#weight' => 0,
+    // The following values were set by the content module and need
+    // to be passed down to the nested element.
+    '#title' => $element['#title'],
+    '#description' => $element['#description'],
+    '#required' => $element['#required'],
+    '#field_name' => $element['#field_name'],
+    '#type_name' => $element['#type_name'],
+    '#delta' => $element['#delta'],
+    '#columns' => $element['#columns'],
+    '#attributes' => array(
+       'class' => $js_validate_class, 
+       'isbn-format' => $field['isbn_format'],
+    ),
+  );
+
+  // Used so that hook_field('validate') knows where to flag an error.
+  $element['_error_element'] = array(
+    '#type' => 'value',
+    '#value' => implode('][', array_merge($element['#parents'], array($field_key))),
+  );
+
+  return $element;
+}
+
+
+
+
+function isbn_dynamic_validation() {
+  static $complete = FALSE;
+  global $user;
+  // Only need to do once per page.
+  if (!$complete) {
+    drupal_add_js(drupal_get_path('module', 'isbn') .'/isbn.js', 'module');
+    drupal_add_js(drupal_get_path('module', 'isbn') .'/isbn_attach.js', 'module');
+
+    drupal_add_js(array(
+      'isbn' => array(
+        'validateURL' => url('isbn/validate'),
+        'confirmSuccess' => t('Valid ISBN/ISSN number.'),
+        'confirmFailure' => t('Not a valid ISBN/ISSN Number.'), 
+        'notEnoughDigits' => t('Not Enough Digits!  '),
+        'tooManyDigits' => t('Too Many Digits!  '),
+        'requiredDigits' => t(' digits are required.'),
+        'missingPrefix13' => t('13 Digit ISBNs need to begin with 978 or 979.'),
+    )), 'setting');
+    $complete = TRUE;
+  }
+ 
+
+}

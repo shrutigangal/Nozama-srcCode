@@ -1,0 +1,30 @@
+Installation du serveur Web de test NOZAMA
+------------------------------------------
+
+Pré-requis :
+- Port 80 et 25 disponibles
+- Aucun service MySQL démarré
+
+Installation :
+- Décompresser l'archive dans le dossier de destination
+- Lancer le script SETUP_NOZAMA.bat et choisir l'option "Refresh"
+
+Démarrage :
+- Lancer le script START_ALL.bat
+- Une fenêtre Internet Explorer doit s'ouvrir avec le message "It works!"
+/!\ NE PAS FERMER LES FENETERS OUVERTES PAR LE SCRIPT, CECI ENTRAINERAIT ALORS L'ARRET DES SERVEUR !!!
+
+Arrêt :
+- Lancer le script STOP_ALL.bat
+
+
+
+Versions :
+Apache 2.2.17
+MySQL 5.5.8
+PHP 5.3.5
+smtp4dev 1.0
+Drupal 6.2.0
+
+Notes :
+Ce serveur est basé sur le serveur XAMPP 1.7.4

@@ -1,0 +1,16 @@
+; $Id: isbn.info,v 1.2.2.1 2009/05/06 22:27:08 gundalo Exp $
+
+name = ISBN 
+description = Provides a field for ISBN values
+package = CCK
+core = 6.x
+dependencies[] = content
+dependencies[] = text
+
+
+; Information added by drupal.org packaging script on 2009-09-17
+version = "6.x-1.0-alpha2"
+core = "6.x"
+project = "isbn"
+datestamp = "1253166032"
+
